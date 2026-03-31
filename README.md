@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/infragraph-logo.svg" alt="InfraGraph" width="120" />
+  <img src="docs/assets/infragraph-logo.png" alt="InfraGraph" width="120" />
 </p>
 
 <h1 align="center">InfraGraph</h1>
