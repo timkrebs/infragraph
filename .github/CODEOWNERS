@@ -1,0 +1,15 @@
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything
+* @timkrebs
+
+# Core packages
+/internal/api/    @timkrebs
+/internal/store/  @timkrebs
+/internal/graph/  @timkrebs
+/internal/collector/ @timkrebs
+/cmd/             @timkrebs
+
+# CI and build
+/.github/         @timkrebs
+/Makefile         @timkrebs
