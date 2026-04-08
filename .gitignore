@@ -1,0 +1,45 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go build cache
+*.o
+*.a
+*.test
+
+# Coverage
+coverage.out
+coverage.html
+*.coverprofile
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment & secrets
+.env
+.env.*
+*.pem
+*.key
+
+# OS files
+Thumbs.db
+
+# Temporary files
+tmp/
+*.tmp
+*.log
+
+# Database files (development)
+*.db
+
+# UI dependencies (dist/ is committed for go:embed)
+ui/node_modules/
