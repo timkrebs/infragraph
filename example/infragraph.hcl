@@ -46,5 +46,6 @@ collector "kubernetes" {
 }
 
 collector "docker" {
-  socket = "unix:///var/run/docker.sock"
+  socket             = "unix:///var/run/docker.sock"
+  reconcile_interval = "1m"
 }

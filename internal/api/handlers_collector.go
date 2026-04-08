@@ -7,6 +7,7 @@ import (
 
 	"github.com/timkrebs/infragraph/internal/collector"
 	"github.com/timkrebs/infragraph/internal/graph"
+	"github.com/timkrebs/infragraph/version"
 )
 
 // maxEventBatch is the maximum number of events accepted in a single push.
@@ -113,7 +114,7 @@ func (h *Handlers) CollectorRegister(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":     "ok",
-		"version":    version,
+		"version":    version.Version,
 		"node_count": nodeCount,
 		"edge_count": edgeCount,
 	})

@@ -2,6 +2,17 @@
 main_package_path = .
 binary_name = infragraph
 
+# Version injection — mirrors GoReleaser ldflags.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "0.1.0-dev")
+GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
+GIT_TREE_STATE ?= $(shell test -z "$(shell git status --porcelain 2>/dev/null)" && echo "clean" || echo "dirty")
+BUILD_DATE ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
+LDFLAGS = -s -w \
+	-X github.com/timkrebs/infragraph/version.Version=$(VERSION) \
+	-X github.com/timkrebs/infragraph/version.GitCommit=$(GIT_COMMIT) \
+	-X github.com/timkrebs/infragraph/version.GitTreeState=$(GIT_TREE_STATE) \
+	-X github.com/timkrebs/infragraph/version.BuildDate=$(BUILD_DATE)
+
 # ==================================================================================== #
 # HELPERS
 # ==================================================================================== #
@@ -66,7 +77,7 @@ tidy:
 ## build: build the application
 .PHONY: build
 build:
-	go build -ldflags="-s -w" -o=bin/${binary_name} ${main_package_path}
+	go build -ldflags="$(LDFLAGS)" -o=bin/${binary_name} ${main_package_path}
 
 ## run: run the application
 .PHONY: run
@@ -76,7 +87,32 @@ run: build
 ## clean: remove build artifacts
 .PHONY: clean
 clean:
-	rm -rf bin/
+	rm -rf bin/ dist/
+
+## version: print the version that will be baked into the binary
+.PHONY: version
+version:
+	@echo "$(VERSION) ($(GIT_COMMIT), $(GIT_TREE_STATE), $(BUILD_DATE))"
+
+
+# ==================================================================================== #
+# RELEASE
+# ==================================================================================== #
+
+## release/dry-run: run GoReleaser in snapshot mode (no publish)
+.PHONY: release/dry-run
+release/dry-run:
+	goreleaser release --snapshot --clean
+
+## release/local: build release artifacts locally without publishing
+.PHONY: release/local
+release/local:
+	goreleaser build --snapshot --clean
+
+## release/check: validate .goreleaser.yml
+.PHONY: release/check
+release/check:
+	goreleaser check
 
 # ==================================================================================== #
 # UI

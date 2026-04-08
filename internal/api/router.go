@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/timkrebs/infragraph/internal/collector"
 	"github.com/timkrebs/infragraph/internal/graph"
 	"github.com/timkrebs/infragraph/internal/store"
 	"github.com/timkrebs/infragraph/ui"
@@ -77,6 +78,10 @@ func NewRouter(st store.Store, graphState *atomic.Pointer[graph.Graph], logger *
 	mux.HandleFunc("/v1/graph/node/", wrap(h.GraphNode))
 	mux.HandleFunc("/v1/graph/impact/", wrap(h.GraphImpact))
 
+	// Collector push endpoints (agent → server).
+	mux.HandleFunc("/v1/collector/events", wrap(h.CollectorEvents))
+	mux.HandleFunc("/v1/collector/register", wrap(h.CollectorRegister))
+
 	// Serve the embedded web UI at /ui/.
 	mux.Handle("/ui/", ui.Handler())
 	// Redirect bare /ui to /ui/ so the SPA loads correctly.
@@ -91,6 +96,14 @@ func NewRouter(st store.Store, graphState *atomic.Pointer[graph.Graph], logger *
 func SetShutdown(handler http.Handler, cancel context.CancelFunc) {
 	if r, ok := handler.(*Router); ok {
 		r.handlers.SetShutdown(cancel)
+	}
+}
+
+// SetEmit registers the EventFunc used by POST /v1/collector/events.
+// This must be called before the server starts accepting requests.
+func SetEmit(handler http.Handler, emit collector.EventFunc) {
+	if r, ok := handler.(*Router); ok {
+		r.handlers.emit = emit
 	}
 }
 

@@ -14,9 +14,8 @@ import (
 	"github.com/timkrebs/infragraph/internal/collector"
 	"github.com/timkrebs/infragraph/internal/graph"
 	"github.com/timkrebs/infragraph/internal/store"
+	"github.com/timkrebs/infragraph/version"
 )
-
-const version = "0.1.0"
 
 // maxTraversalDepth is the server-side cap on impact analysis depth to prevent
 // excessive BFS traversals (DoS protection).
@@ -27,8 +26,8 @@ type Handlers struct {
 	store    store.Store
 	graph    *atomic.Pointer[graph.Graph]
 	log      *slog.Logger
-	shutdown context.CancelFunc     // set by the server to allow /v1/sys/shutdown
-	emit     collector.EventFunc    // set by the server for collector push endpoint
+	shutdown context.CancelFunc  // set by the server to allow /v1/sys/shutdown
+	emit     collector.EventFunc // set by the server for collector push endpoint
 }
 
 // SetShutdown registers the cancel function that /v1/sys/shutdown will call.
@@ -98,7 +97,7 @@ func (h *Handlers) SysStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"version":    version,
+		"version":    version.Version,
 		"node_count": nodeCount,
 		"edge_count": edgeCount,
 		"store_path": h.store.Path(),
@@ -326,10 +325,10 @@ func (h *Handlers) currentGraph() graph.Graph {
 	return *p
 }
 
-// validNodeIDRe enforces the "type/name" convention:
+// validNodeIDRe enforces the "type/name" or "type/namespace/name" convention:
 // - type segment: lowercase alpha, digits, underscores, hyphens
-// - one or more name segments separated by "/": same chars plus colons and dots
-var validNodeIDRe = regexp.MustCompile(`^[a-z][a-z0-9_-]*/[a-z0-9][a-z0-9_.:-]*$`)
+// - one or two name segments separated by "/": same chars plus colons and dots
+var validNodeIDRe = regexp.MustCompile(`^[a-z][a-z0-9_-]*(/[a-z0-9][a-z0-9_.:-]*){1,2}$`)
 
 // validNodeID checks that id matches the "type/name" convention.
 func validNodeID(id string) bool {

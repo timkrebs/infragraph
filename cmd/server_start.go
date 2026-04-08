@@ -3,8 +3,10 @@ package cmd
 import (
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	cli "github.com/timkrebs/gocli"
 
@@ -108,11 +110,12 @@ func (c *ServerStartCmd) Run(args []string) int {
 	}
 	defer st.Close()
 
-	// Build collector list. Always include the static seed collector so the
-	// server is immediately queryable. Real collectors (K8s, Docker) are added
-	// in Phase 2 based on the HCL [collector "..."] blocks.
-	collectors := []collector.Collector{
-		&collector.StaticCollector{},
+	// Build collector list from config. Falls back to the static seed
+	// collector when no [collector] blocks are defined.
+	collectors, err := buildCollectors(fullCfg, slog.Default())
+	if err != nil {
+		c.Ui.Error(fmt.Sprintf("Failed to configure collectors: %s", err))
+		return 1
 	}
 
 	c.Ui.Info(fmt.Sprintf("Starting InfraGraph server on %s:%d...", bindAddr, port))
@@ -126,4 +129,57 @@ func (c *ServerStartCmd) Run(args []string) int {
 		c.Ui.Error(err.Error())
 	}
 	return exitCode
+}
+
+// buildCollectors creates the list of collectors from the config.
+// When no [collector] blocks are present, a static seed collector is returned.
+func buildCollectors(cfg *Config, logger *slog.Logger) ([]collector.Collector, error) {
+	if cfg == nil || len(cfg.Collectors) == 0 {
+		return []collector.Collector{&collector.StaticCollector{}}, nil
+	}
+
+	var collectors []collector.Collector
+	for i, cc := range cfg.Collectors {
+		switch cc.Type {
+		case "static":
+			collectors = append(collectors, &collector.StaticCollector{})
+
+		case "kubernetes":
+			interval := 60 * time.Second
+			if cc.ReconcileInterval != "" {
+				d, err := time.ParseDuration(cc.ReconcileInterval)
+				if err != nil {
+					return nil, fmt.Errorf("collector[%d]: invalid reconcile_interval: %w", i, err)
+				}
+				interval = d
+			}
+			collectors = append(collectors, &collector.KubernetesCollector{
+				KubeConfig:        cc.KubeConfig,
+				Context:           cc.Context,
+				Namespaces:        cc.Namespaces,
+				Resources:         cc.Resources,
+				ReconcileInterval: interval,
+				Logger:            logger,
+			})
+
+		case "docker":
+			interval := 60 * time.Second
+			if cc.ReconcileInterval != "" {
+				d, err := time.ParseDuration(cc.ReconcileInterval)
+				if err != nil {
+					return nil, fmt.Errorf("collector[%d]: invalid reconcile_interval: %w", i, err)
+				}
+				interval = d
+			}
+			collectors = append(collectors, &collector.DockerCollector{
+				Socket:            cc.Socket,
+				ReconcileInterval: interval,
+				Logger:            logger,
+			})
+
+		default:
+			return nil, fmt.Errorf("collector[%d]: unknown type %q", i, cc.Type)
+		}
+	}
+	return collectors, nil
 }

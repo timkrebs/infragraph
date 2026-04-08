@@ -58,6 +58,53 @@ type CollectorConfig struct {
 	Socket string `hcl:"socket,optional"`
 }
 
+// AgentConfig is the top-level structure of an agent config file.
+// The agent runs a collector locally and pushes events to a remote server.
+type AgentConfig struct {
+	Server    AgentServerConfig `hcl:"server,block"`
+	Collector CollectorConfig   `hcl:"collector,block"`
+}
+
+// AgentServerConfig points the agent at the InfraGraph server.
+type AgentServerConfig struct {
+	Address       string `hcl:"address"`
+	Token         string `hcl:"token,optional"`
+	AgentName     string `hcl:"agent_name,optional"`
+	TLSCACert     string `hcl:"tls_ca_cert,optional"`
+	TLSCert       string `hcl:"tls_cert,optional"`
+	TLSKey        string `hcl:"tls_key,optional"`
+	TLSSkipVerify bool   `hcl:"tls_skip_verify,optional"`
+}
+
+// LoadAgentConfig reads and parses an agent HCL configuration file.
+func LoadAgentConfig(path string) (*AgentConfig, error) {
+	var cfg AgentConfig
+	if err := hclsimple.DecodeFile(path, nil, &cfg); err != nil {
+		return nil, err
+	}
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+// validate checks agent config values.
+func (c *AgentConfig) validate() error {
+	if c.Server.Address == "" {
+		return fmt.Errorf("agent server.address is required")
+	}
+	knownCollectors := map[string]bool{"static": true, "kubernetes": true, "docker": true}
+	if !knownCollectors[c.Collector.Type] {
+		return fmt.Errorf("agent collector: unknown type %q (known: static, kubernetes, docker)", c.Collector.Type)
+	}
+	if c.Collector.ReconcileInterval != "" {
+		if _, err := time.ParseDuration(c.Collector.ReconcileInterval); err != nil {
+			return fmt.Errorf("agent collector: invalid reconcile_interval %q: %w", c.Collector.ReconcileInterval, err)
+		}
+	}
+	return nil
+}
+
 // LoadConfig reads and parses an HCL configuration file from the given path.
 func LoadConfig(path string) (*Config, error) {
 	var cfg Config

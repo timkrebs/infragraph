@@ -185,6 +185,7 @@ func runServer(bindAddr string, port int, cfg ServerConfig, listener ListenerCon
 	// Since NewRouter returns an http.Handler wrapping *api.Handlers, we set it
 	// via a dedicated function on the concrete type through the package.
 	api.SetShutdown(router, cancel)
+	api.SetEmit(router, makeEmitFunc())
 	defer router.Close() // stop rate limiter cleanup goroutine
 
 	// Log effective configuration summary.

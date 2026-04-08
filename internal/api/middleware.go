@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/timkrebs/infragraph/version"
 )
 
 // requestIDMiddleware generates a unique X-Request-ID for each request and
@@ -35,7 +37,7 @@ func generateRequestID() string {
 // versionHeaderMiddleware sets X-InfraGraph-Version on every response.
 func versionHeaderMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-InfraGraph-Version", version)
+		w.Header().Set("X-InfraGraph-Version", version.Version)
 		next(w, r)
 	}
 }

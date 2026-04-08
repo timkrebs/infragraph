@@ -1,0 +1,164 @@
+# GoReleaser configuration — Vault-inspired release pipeline.
+# Triggers on git tag push: v0.1.0, v0.2.0, etc.
+# Produces: cross-compiled archives, checksums, Docker images, GitHub Release.
+
+version: 2
+
+project_name: infragraph
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  - id: infragraph
+    main: .
+    binary: infragraph
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/timkrebs/infragraph/version.Version={{.Version}}
+      - -X github.com/timkrebs/infragraph/version.GitCommit={{.FullCommit}}
+      - -X github.com/timkrebs/infragraph/version.GitTreeState={{if .IsGitDirty}}dirty{{else}}clean{{end}}
+      - -X github.com/timkrebs/infragraph/version.BuildDate={{.Date}}
+    goos:
+      - linux
+      - darwin
+      - windows
+      - freebsd
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - "7"
+    ignore:
+      - goos: windows
+        goarch: arm
+      - goos: freebsd
+        goarch: arm
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+      - example/*.hcl
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_SHA256SUMS"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-dev+{{ .ShortCommit }}"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: "Breaking Changes"
+      regexp: '^.*?!:.*$'
+      order: 0
+    - title: "Features"
+      regexp: '^.*?feat(\(.+\))?:.*$'
+      order: 1
+    - title: "Bug Fixes"
+      regexp: '^.*?fix(\(.+\))?:.*$'
+      order: 2
+    - title: "Security"
+      regexp: '^.*?sec(\(.+\))?:.*$'
+      order: 3
+    - title: "Other"
+      order: 999
+
+dockers:
+  - image_templates:
+      - "ghcr.io/timkrebs/infragraph:{{ .Version }}-amd64"
+    use: buildx
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.title=infragraph"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.source=https://github.com/timkrebs/infragraph"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+    goarch: amd64
+
+  - image_templates:
+      - "ghcr.io/timkrebs/infragraph:{{ .Version }}-arm64"
+    use: buildx
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.title=infragraph"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.source=https://github.com/timkrebs/infragraph"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+    goarch: arm64
+
+docker_manifests:
+  - name_template: "ghcr.io/timkrebs/infragraph:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/timkrebs/infragraph:{{ .Version }}-amd64"
+      - "ghcr.io/timkrebs/infragraph:{{ .Version }}-arm64"
+
+  - name_template: "ghcr.io/timkrebs/infragraph:latest"
+    image_templates:
+      - "ghcr.io/timkrebs/infragraph:{{ .Version }}-amd64"
+      - "ghcr.io/timkrebs/infragraph:{{ .Version }}-arm64"
+
+release:
+  github:
+    owner: timkrebs
+    name: infragraph
+  prerelease: auto
+  draft: false
+  name_template: "InfraGraph v{{ .Version }}"
+  header: |
+    ## InfraGraph v{{ .Version }}
+
+    ### Installation
+
+    **Binary download:**
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/timkrebs/infragraph/main/scripts/install.sh | bash
+    ```
+
+    **Docker:**
+    ```bash
+    docker pull ghcr.io/timkrebs/infragraph:{{ .Version }}
+    ```
+
+    **Homebrew:**
+    ```bash
+    brew install timkrebs/tap/infragraph
+    ```
+
+    See the [CHANGELOG](https://github.com/timkrebs/infragraph/blob/main/CHANGELOG.md) for details.
+  footer: |
+    **Full Changelog**: https://github.com/timkrebs/infragraph/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+    ---
+    _Verify checksums: `sha256sum -c infragraph_{{ .Version }}_SHA256SUMS`_

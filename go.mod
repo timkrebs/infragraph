@@ -5,6 +5,8 @@ go 1.26.1
 require (
 	github.com/hashicorp/hcl/v2 v2.24.0
 	github.com/timkrebs/gocli v1.2.0
+	go.etcd.io/bbolt v1.3.9
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -31,7 +33,6 @@ require (
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/spf13/cast v1.7.0 // indirect
 	github.com/zclconf/go-cty v1.16.3 // indirect
-	go.etcd.io/bbolt v1.3.9 // indirect
 	golang.org/x/crypto v0.38.0 // indirect
 	golang.org/x/mod v0.17.0 // indirect
 	golang.org/x/sync v0.14.0 // indirect

@@ -22,6 +22,10 @@ type DockerCollector struct {
 	Socket            string        // unix socket path (default: /var/run/docker.sock)
 	ReconcileInterval time.Duration // polling interval (default 60s)
 	Logger            *slog.Logger
+
+	// baseURL overrides the Docker API base URL. Used for testing.
+	// In production this is always "http://localhost" (over unix socket).
+	baseURL string
 }
 
 // Name returns "docker".
@@ -217,7 +221,11 @@ func (c *DockerCollector) discoverVolumes(ctx context.Context, client *http.Clie
 func (c *DockerCollector) dockerGet(ctx context.Context, client *http.Client, path string, v any) error {
 	// Docker API requests go over the unix socket; the Host header is ignored
 	// but required. We use the v1.41 API version for broad compatibility.
-	url := "http://localhost/v1.41" + path
+	base := c.baseURL
+	if base == "" {
+		base = "http://localhost"
+	}
+	url := base + "/v1.41" + path
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
