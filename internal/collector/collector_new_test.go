@@ -288,7 +288,7 @@ func TestDockerCollector_Name(t *testing.T) {
 func TestDockerCollector_DiscoversContainers(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/v1.41/containers/json":
+		case r.URL.Path == "/v1.47/containers/json":
 			json.NewEncoder(w).Encode([]map[string]any{
 				{
 					"Id":     "abc123def456",
@@ -306,11 +306,11 @@ func TestDockerCollector_DiscoversContainers(t *testing.T) {
 					},
 				},
 			})
-		case r.URL.Path == "/v1.41/networks":
+		case r.URL.Path == "/v1.47/networks":
 			json.NewEncoder(w).Encode([]map[string]any{
 				{"Id": "net123", "Name": "bridge", "Driver": "bridge"},
 			})
-		case r.URL.Path == "/v1.41/volumes":
+		case r.URL.Path == "/v1.47/volumes":
 			json.NewEncoder(w).Encode(map[string]any{
 				"Volumes": []map[string]any{
 					{"Name": "app-data", "Driver": "local"},

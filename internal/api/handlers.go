@@ -28,6 +28,7 @@ type Handlers struct {
 	log      *slog.Logger
 	shutdown context.CancelFunc  // set by the server to allow /v1/sys/shutdown
 	emit     collector.EventFunc // set by the server for collector push endpoint
+	registry *collector.Registry // collector state registry (may be nil)
 }
 
 // SetShutdown registers the cancel function that /v1/sys/shutdown will call.

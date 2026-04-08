@@ -106,6 +106,12 @@ func (h *Handlers) CollectorRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Track the remote agent in the registry so it appears in GET /v1/collectors.
+	if h.registry != nil && body.Agent != "" {
+		h.registry.Register(body.Agent, "agent")
+		h.registry.SetStatus(body.Agent, collector.StatusRunning, "")
+	}
+
 	h.log.Info("agent registered", "agent", body.Agent)
 
 	// Respond with server status so the agent can verify connectivity.
@@ -127,4 +133,25 @@ func validPushNode(n *graph.Node) bool {
 		return false
 	}
 	return true
+}
+
+// CollectorList handles GET /v1/collectors — returns the status of all
+// registered collectors (both local and remote agents).
+func (h *Handlers) CollectorList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var list []collector.CollectorInfo
+	if h.registry != nil {
+		list = h.registry.List()
+	}
+	if list == nil {
+		list = []collector.CollectorInfo{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"collectors": list,
+	})
 }

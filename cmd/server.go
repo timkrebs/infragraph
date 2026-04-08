@@ -95,11 +95,15 @@ func runServer(bindAddr string, port int, cfg ServerConfig, listener ListenerCon
 	}
 	graphPtr.Store(&initialGraph)
 
+	// Collector registry tracks the state of all running collectors.
+	registry := collector.NewRegistry()
+
 	// makeEmitFunc returns the collector callback that persists events and
 	// signals the debounced graph-refresh goroutine.
 	refreshCh := make(chan struct{}, 1) // signal channel for debounced reload
 
-	makeEmitFunc := func() collector.EventFunc {
+	makeEmitFunc := func(collectorName string) collector.EventFunc {
+		var resourceCount int
 		return func(ev collector.Event) {
 			if ev.Node == nil {
 				return
@@ -115,12 +119,15 @@ func runServer(bindAddr string, port int, cfg ServerConfig, listener ListenerCon
 						logger.Warn("upsert edge failed", "from", e.From, "to", e.To, "err", err)
 					}
 				}
+				resourceCount++
 			case collector.EventDelete:
 				if err := st.DeleteNode(ev.Node.ID); err != nil {
 					logger.Warn("delete node failed", "id", ev.Node.ID, "err", err)
 					return
 				}
 			}
+			// Record sync progress in the registry.
+			registry.RecordSync(collectorName, resourceCount)
 			// Signal graph refresh (non-blocking).
 			select {
 			case refreshCh <- struct{}{}:
@@ -161,13 +168,18 @@ func runServer(bindAddr string, port int, cfg ServerConfig, listener ListenerCon
 	// Start all collectors.
 	for _, c := range collectors {
 		c := c
-		emit := makeEmitFunc()
+		registry.Register(c.Name(), c.Name())
+		emit := makeEmitFunc(c.Name())
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			registry.SetStatus(c.Name(), collector.StatusRunning, "")
 			logger.Info("collector started", "collector", c.Name())
 			if err := c.Run(sigCtx, emit); err != nil && sigCtx.Err() == nil {
+				registry.SetStatus(c.Name(), collector.StatusError, err.Error())
 				logger.Warn("collector exited with error", "collector", c.Name(), "err", err)
+			} else {
+				registry.SetStatus(c.Name(), collector.StatusStopped, "")
 			}
 			logger.Info("collector stopped", "collector", c.Name())
 		}()
@@ -177,6 +189,7 @@ func runServer(bindAddr string, port int, cfg ServerConfig, listener ListenerCon
 	router := api.NewRouter(st, graphPtr, logger, api.RouterOpts{
 		APIToken:  cfg.APIToken,
 		RateLimit: cfg.RateLimit,
+		Registry:  registry,
 	})
 
 	// Expose the shutdown cancel so /v1/sys/shutdown can trigger it.
@@ -185,7 +198,7 @@ func runServer(bindAddr string, port int, cfg ServerConfig, listener ListenerCon
 	// Since NewRouter returns an http.Handler wrapping *api.Handlers, we set it
 	// via a dedicated function on the concrete type through the package.
 	api.SetShutdown(router, cancel)
-	api.SetEmit(router, makeEmitFunc())
+	api.SetEmit(router, makeEmitFunc("api-push"))
 	defer router.Close() // stop rate limiter cleanup goroutine
 
 	// Log effective configuration summary.

@@ -48,3 +48,13 @@ export interface ImpactResult {
   root: Node;
   affected: ImpactNode[];
 }
+
+export interface CollectorInfo {
+  name: string;
+  type: string;
+  status: 'starting' | 'running' | 'stopped' | 'error';
+  started_at: string;
+  last_sync: string;
+  resources: number;
+  error: string;
+}

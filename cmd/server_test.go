@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/timkrebs/infragraph/internal/api"
+	"github.com/timkrebs/infragraph/internal/collector"
 	"github.com/timkrebs/infragraph/internal/graph"
 	"github.com/timkrebs/infragraph/internal/store"
 )
@@ -351,5 +352,100 @@ func TestGraphImpactHandler_NegativeDepth(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for negative depth, got %d", rec.Code)
+	}
+}
+
+// --- collector list tests ---
+
+func newTestRouterWithRegistry(t *testing.T) (http.Handler, *collector.Registry) {
+	t.Helper()
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	st, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open test store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	g, err := st.LoadGraph()
+	if err != nil {
+		t.Fatalf("load graph: %v", err)
+	}
+	graphPtr := &atomic.Pointer[graph.Graph]{}
+	graphPtr.Store(&g)
+
+	reg := collector.NewRegistry()
+	return api.NewRouter(st, graphPtr, slog.Default(), api.RouterOpts{Registry: reg}), reg
+}
+
+func TestCollectorListHandler_Empty(t *testing.T) {
+	handler, _ := newTestRouterWithRegistry(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/collectors", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var body struct {
+		Collectors []collector.CollectorInfo `json:"collectors"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(body.Collectors) != 0 {
+		t.Errorf("expected 0 collectors, got %d", len(body.Collectors))
+	}
+}
+
+func TestCollectorListHandler_WithCollectors(t *testing.T) {
+	handler, reg := newTestRouterWithRegistry(t)
+
+	reg.Register("kubernetes", "kubernetes")
+	reg.SetStatus("kubernetes", collector.StatusRunning, "")
+	reg.RecordSync("kubernetes", 14)
+
+	reg.Register("docker-local", "docker")
+	reg.SetStatus("docker-local", collector.StatusError, "socket not found")
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/collectors", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var body struct {
+		Collectors []collector.CollectorInfo `json:"collectors"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(body.Collectors) != 2 {
+		t.Fatalf("expected 2 collectors, got %d", len(body.Collectors))
+	}
+
+	// Sorted by name: docker-local, kubernetes.
+	docker := body.Collectors[0]
+	if docker.Name != "docker-local" || docker.Status != collector.StatusError || docker.Error != "socket not found" {
+		t.Errorf("unexpected docker collector: %+v", docker)
+	}
+	k8s := body.Collectors[1]
+	if k8s.Name != "kubernetes" || k8s.Status != collector.StatusRunning || k8s.Resources != 14 {
+		t.Errorf("unexpected kubernetes collector: %+v", k8s)
+	}
+}
+
+func TestCollectorListHandler_MethodNotAllowed(t *testing.T) {
+	handler, _ := newTestRouterWithRegistry(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/collectors", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for POST, got %d", rec.Code)
 	}
 }

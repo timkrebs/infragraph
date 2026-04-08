@@ -136,3 +136,9 @@ ui/build:
 ## build/full: build UI then Go binary (single binary with embedded UI)
 .PHONY: build/full
 build/full: ui/build build
+
+## local-dev: build everything, run tests, and start the server with dev config
+.PHONY: local-dev
+local-dev: ui/build build test
+	@echo "==> Starting InfraGraph server (dev config)..."
+	./bin/${binary_name} server start --config example/dev.hcl

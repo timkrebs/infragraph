@@ -220,12 +220,12 @@ func (c *DockerCollector) discoverVolumes(ctx context.Context, client *http.Clie
 
 func (c *DockerCollector) dockerGet(ctx context.Context, client *http.Client, path string, v any) error {
 	// Docker API requests go over the unix socket; the Host header is ignored
-	// but required. We use the v1.41 API version for broad compatibility.
+	// but required. We use API version 1.47 (Docker Engine 28.x).
 	base := c.baseURL
 	if base == "" {
 		base = "http://localhost"
 	}
-	url := base + "/v1.41" + path
+	url := base + "/v1.47" + path
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err

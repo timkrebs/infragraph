@@ -1,4 +1,4 @@
-import type { GraphData, SystemStatus, NodeDetail, ImpactResult } from './types';
+import type { GraphData, SystemStatus, NodeDetail, ImpactResult, CollectorInfo } from './types';
 
 const BASE = '/v1';
 
@@ -35,4 +35,9 @@ export async function getImpact(id: string, direction: 'forward' | 'reverse', de
   return fetchJSON<ImpactResult>(
     `${BASE}/graph/impact/${encodeURIComponent(id)}?direction=${direction}&depth=${depth}`,
   );
+}
+
+export async function getCollectors(): Promise<CollectorInfo[]> {
+  const data = await fetchJSON<{ collectors: CollectorInfo[] }>(`${BASE}/collectors`);
+  return data.collectors;
 }

@@ -43,13 +43,15 @@ type RouterOpts struct {
 	APIToken string
 	// RateLimit is max requests per second per IP. 0 disables rate limiting.
 	RateLimit int
+	// Registry is the collector state registry (may be nil).
+	Registry *collector.Registry
 }
 
 // NewRouter builds the HTTP handler with all v1 routes wired to their handlers.
 // graphState is an atomic pointer that always holds the latest graph snapshot.
 // Handlers read from this pointer lock-free; the collector loop swaps it on updates.
 func NewRouter(st store.Store, graphState *atomic.Pointer[graph.Graph], logger *slog.Logger, opts RouterOpts) *Router {
-	h := &Handlers{store: st, graph: graphState, log: logger}
+	h := &Handlers{store: st, graph: graphState, log: logger, registry: opts.Registry}
 	mux := http.NewServeMux()
 
 	// Build rate limiter (nil if disabled).
@@ -81,6 +83,9 @@ func NewRouter(st store.Store, graphState *atomic.Pointer[graph.Graph], logger *
 	// Collector push endpoints (agent → server).
 	mux.HandleFunc("/v1/collector/events", wrap(h.CollectorEvents))
 	mux.HandleFunc("/v1/collector/register", wrap(h.CollectorRegister))
+
+	// Collector registry endpoint (UI → server).
+	mux.HandleFunc("/v1/collectors", wrap(h.CollectorList))
 
 	// Serve the embedded web UI at /ui/.
 	mux.Handle("/ui/", ui.Handler())

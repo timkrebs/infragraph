@@ -1,203 +1,242 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import ForceGraph2D from 'react-force-graph-2d';
+import cytoscape from 'cytoscape';
 import { getGraph } from '../api/client';
 import type { Node, Edge } from '../api/types';
 import { nodeColor, edgeColor, NODE_TYPES } from '../utils/colors';
-import StatusBadge from '../components/StatusBadge';
-import TypeBadge from '../components/TypeBadge';
-
-interface GraphNode {
-  id: string;
-  type: string;
-  provider: string;
-  namespace: string;
-  status: string;
-  labels: Record<string, string> | null;
-  x?: number;
-  y?: number;
-  [key: string]: unknown;
-}
-
-interface GraphLink {
-  source: string;
-  target: string;
-  edgeType: string;
-  weight: number;
-  [key: string]: unknown;
-}
 
 export default function GraphView() {
-  const [nodes, setNodes] = useState<GraphNode[]>([]);
-  const [links, setLinks] = useState<GraphLink[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [hovered, setHovered] = useState<GraphNode | null>(null);
+  const [nodeCount, setNodeCount] = useState(0);
+  const [edgeCount, setEdgeCount] = useState(0);
+  const [hovered, setHovered] = useState<{ id: string; type: string; provider: string; namespace: string; status: string } | null>(null);
+  const [layout, setLayout] = useState<'cose' | 'breadthfirst' | 'circle'>('cose');
   const containerRef = useRef<HTMLDivElement>(null);
-  const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  const cyRef = useRef<cytoscape.Core | null>(null);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    getGraph()
-      .then((data) => {
-        setNodes(
-          data.nodes.map((n: Node) => ({
+  // Build Cytoscape instance
+  const buildGraph = useCallback(
+    (nodes: Node[], edges: Edge[], layoutName: string) => {
+      if (!containerRef.current) return;
+      if (cyRef.current) cyRef.current.destroy();
+
+      const elements: cytoscape.ElementDefinition[] = [
+        ...nodes.map((n) => ({
+          data: {
             id: n.id,
-            type: n.type,
+            label: n.id.split('/').pop() || n.id,
+            nodeType: n.type,
             provider: n.provider,
             namespace: n.namespace,
             status: n.status,
-            labels: n.labels,
-          })),
-        );
-        setLinks(
-          data.edges.map((e: Edge) => ({
+          },
+        })),
+        ...edges.map((e, i) => ({
+          data: {
+            id: `e${i}`,
             source: e.from,
             target: e.to,
             edgeType: e.type,
             weight: e.weight,
-          })),
-        );
-      })
-      .catch((err) => setError(String(err)))
-      .finally(() => setLoading(false));
-  }, []);
+          },
+        })),
+      ];
 
-  useEffect(() => {
-    function updateSize() {
-      if (containerRef.current) {
-        setDimensions({
-          width: containerRef.current.clientWidth,
-          height: containerRef.current.clientHeight,
+      const cy = cytoscape({
+        container: containerRef.current,
+        elements,
+        style: [
+          {
+            selector: 'node',
+            style: {
+              label: 'data(label)',
+              width: 28,
+              height: 28,
+              'background-color': (ele) => nodeColor(ele.data('nodeType')),
+              'border-width': 2,
+              'border-color': '#ffffff',
+              'font-size': '10px',
+              'font-family': '-apple-system, BlinkMacSystemFont, sans-serif',
+              color: '#3b3d45',
+              'text-valign': 'bottom',
+              'text-margin-y': 4,
+              'text-outline-color': '#ffffff',
+              'text-outline-width': 2,
+            } as cytoscape.Css.Node,
+          },
+          {
+            selector: 'node:active',
+            style: { 'overlay-opacity': 0.1 } as cytoscape.Css.Node,
+          },
+          {
+            selector: 'node.highlight',
+            style: {
+              'border-width': 3,
+              'border-color': '#1060ff',
+              width: 34,
+              height: 34,
+            } as cytoscape.Css.Node,
+          },
+          {
+            selector: 'edge',
+            style: {
+              width: 2,
+              'line-color': (ele) => edgeColor(ele.data('edgeType')),
+              'target-arrow-color': (ele) => edgeColor(ele.data('edgeType')),
+              'target-arrow-shape': 'triangle',
+              'curve-style': 'bezier',
+              opacity: 0.7,
+            } as cytoscape.Css.Edge,
+          },
+          {
+            selector: 'edge.highlight',
+            style: { opacity: 1, width: 3 } as cytoscape.Css.Edge,
+          },
+          {
+            selector: '.faded',
+            style: { opacity: 0.15 } as cytoscape.Css.Node,
+          },
+        ],
+        layout: { name: layoutName, animate: true, animationDuration: 500 } as cytoscape.LayoutOptions,
+        minZoom: 0.2,
+        maxZoom: 5,
+      });
+
+      // Click → navigate to detail
+      cy.on('tap', 'node', (evt) => {
+        navigate(`/resources/${encodeURIComponent(evt.target.id())}`);
+      });
+
+      // Hover → highlight subtree + set hovered
+      cy.on('mouseover', 'node', (evt) => {
+        const node = evt.target;
+        setHovered({
+          id: node.id(),
+          type: node.data('nodeType'),
+          provider: node.data('provider'),
+          namespace: node.data('namespace'),
+          status: node.data('status'),
         });
-      }
-    }
-    updateSize();
-    window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
-  }, []);
+        // Highlight connected
+        const neighborhood = node.closedNeighborhood();
+        cy.elements().addClass('faded');
+        neighborhood.removeClass('faded').addClass('highlight');
+      });
 
-  const handleNodeClick = useCallback(
-    (node: unknown) => {
-      const n = node as GraphNode;
-      navigate(`/resources/${encodeURIComponent(n.id)}`);
+      cy.on('mouseout', 'node', () => {
+        setHovered(null);
+        cy.elements().removeClass('faded highlight');
+      });
+
+      cyRef.current = cy;
     },
     [navigate],
   );
 
-  const handleNodeHover = useCallback((_node: unknown | null) => {
-    setHovered(_node ? (_node as GraphNode) : null);
+  // Fetch data
+  useEffect(() => {
+    getGraph()
+      .then((data) => {
+        setNodeCount(data.nodes.length);
+        setEdgeCount(data.edges.length);
+        buildGraph(data.nodes, data.edges, layout);
+      })
+      .catch((err) => setError(String(err)))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const paintNode = useCallback(
-    (node: unknown, ctx: CanvasRenderingContext2D, globalScale: number) => {
-      const n = node as GraphNode & { x: number; y: number };
-      const color = nodeColor(n.type);
-      const size = 6;
-      const fontSize = Math.max(11 / globalScale, 1.5);
+  // Re-layout when layout mode changes
+  useEffect(() => {
+    if (!cyRef.current) return;
+    cyRef.current.layout({ name: layout, animate: true, animationDuration: 500 } as cytoscape.LayoutOptions).run();
+  }, [layout]);
 
-      // Glow effect
-      ctx.shadowColor = color;
-      ctx.shadowBlur = hovered?.id === n.id ? 12 : 4;
+  if (loading) {
+    return (
+      <div className="flex h-64 items-center justify-center text-sm text-neutral-400">
+        Loading graph…
+      </div>
+    );
+  }
 
-      // Node circle
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, size, 0, 2 * Math.PI);
-      ctx.fillStyle = color;
-      ctx.fill();
-
-      ctx.shadowBlur = 0;
-
-      // Border
-      ctx.strokeStyle = hovered?.id === n.id ? '#3b3d45' : 'rgba(0,0,0,0.15)';
-      ctx.lineWidth = hovered?.id === n.id ? 2 / globalScale : 0.5 / globalScale;
-      ctx.stroke();
-
-      // Label
-      if (globalScale > 0.6) {
-        const label = n.id.split('/').pop() || n.id;
-        ctx.font = `${fontSize}px -apple-system, sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        ctx.fillStyle = 'rgba(59,61,69,0.9)';
-        ctx.fillText(label, n.x, n.y + size + 2);
-      }
-    },
-    [hovered],
-  );
-
-  if (loading) return <div className="loading">Loading graph...</div>;
-  if (error) return <div className="page-body"><div className="error-banner">{error}</div></div>;
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="rounded-md border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger">
+          {error}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div className="page-header">
-        <h2>Infrastructure Graph</h2>
-        <p>
-          Interactive dependency map — {nodes.length} nodes, {links.length} edges.
-          Click a node to view details.
+    <div className="flex h-full flex-col">
+      {/* Page header */}
+      <div className="border-b border-neutral-200 bg-white px-6 py-5">
+        <h2 className="text-xl font-semibold text-neutral-700">Infrastructure Graph</h2>
+        <p className="mt-1 text-sm text-neutral-500">
+          Interactive dependency map — {nodeCount} nodes, {edgeCount} edges. Click a node to view details.
         </p>
       </div>
-      <div className="graph-container" ref={containerRef}>
-        <ForceGraph2D
-          graphData={{ nodes, links }}
-          width={dimensions.width}
-          height={dimensions.height}
-          nodeCanvasObject={paintNode}
-          nodeCanvasObjectMode={() => 'replace'}
-          linkColor={(link: unknown) => {
-            const l = link as GraphLink;
-            return edgeColor(l.edgeType);
-          }}
-          linkWidth={(link: unknown) => {
-            const l = link as GraphLink;
-            return l.weight * 2;
-          }}
-          linkDirectionalArrowLength={4}
-          linkDirectionalArrowRelPos={0.85}
-          linkCurvature={0.15}
-          linkLabel={(link: unknown) => {
-            const l = link as GraphLink;
-            return l.edgeType;
-          }}
-          onNodeClick={handleNodeClick}
-          onNodeHover={handleNodeHover}
-          backgroundColor="#f5f6f7"
-          cooldownTicks={100}
-          d3VelocityDecay={0.3}
-        />
+
+      {/* Layout controls */}
+      <div className="flex items-center gap-2 border-b border-neutral-200 bg-neutral-50 px-6 py-2">
+        <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Layout:</span>
+        {(['cose', 'breadthfirst', 'circle'] as const).map((l) => (
+          <button
+            key={l}
+            onClick={() => setLayout(l)}
+            className={`rounded-md border px-3 py-1 text-xs font-medium transition ${
+              layout === l
+                ? 'border-brand bg-brand text-white'
+                : 'border-neutral-200 bg-white text-neutral-600 hover:border-brand hover:text-brand'
+            }`}
+          >
+            {l === 'cose' ? 'Force-Directed' : l === 'breadthfirst' ? 'Hierarchical' : 'Circle'}
+          </button>
+        ))}
+        <button
+          onClick={() => cyRef.current?.fit(undefined, 40)}
+          className="ml-auto rounded-md border border-neutral-200 bg-white px-3 py-1 text-xs font-medium text-neutral-600 hover:border-brand hover:text-brand"
+        >
+          Fit
+        </button>
+      </div>
+
+      {/* Graph container */}
+      <div className="relative flex-1 bg-neutral-50">
+        <div ref={containerRef} className="cy-container" />
 
         {/* Legend */}
-        <div className="graph-legend">
-          <h4>Node Types</h4>
+        <div className="absolute left-4 top-4 z-10 rounded-lg border border-neutral-200 bg-white p-3 shadow-sm">
+          <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+            Node Types
+          </h4>
           {NODE_TYPES.map((t) => (
-            <div className="legend-item" key={t}>
-              <div className="legend-dot" style={{ background: nodeColor(t) }} />
-              <span>{t}</span>
+            <div key={t} className="mb-1 flex items-center gap-2 text-xs text-neutral-600">
+              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: nodeColor(t) }} />
+              <span className="capitalize">{t}</span>
             </div>
           ))}
         </div>
 
         {/* Hover tooltip */}
         {hovered && (
-          <div className="graph-tooltip">
-            <h3>{hovered.id}</h3>
-            <div className="detail-row">
-              <span className="detail-label">Type</span>
-              <TypeBadge type={hovered.type} />
-            </div>
-            <div className="detail-row">
-              <span className="detail-label">Provider</span>
-              <span>{hovered.provider}</span>
-            </div>
-            <div className="detail-row">
-              <span className="detail-label">Namespace</span>
-              <span>{hovered.namespace}</span>
-            </div>
-            <div className="detail-row">
-              <span className="detail-label">Status</span>
-              <StatusBadge status={hovered.status} />
-            </div>
+          <div className="absolute right-4 top-4 z-10 min-w-[220px] rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+            <h3 className="mb-2 break-all text-sm font-semibold text-neutral-700">{hovered.id}</h3>
+            <dl className="grid grid-cols-[80px_1fr] gap-x-3 gap-y-1 text-xs">
+              <dt className="text-neutral-500">Type</dt>
+              <dd className="text-neutral-700">{hovered.type}</dd>
+              <dt className="text-neutral-500">Provider</dt>
+              <dd className="text-neutral-700">{hovered.provider}</dd>
+              <dt className="text-neutral-500">Namespace</dt>
+              <dd className="text-neutral-700">{hovered.namespace || '—'}</dd>
+              <dt className="text-neutral-500">Status</dt>
+              <dd className="text-neutral-700">{hovered.status}</dd>
+            </dl>
           </div>
         )}
       </div>
