@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/timkrebs/infragraph/internal/collector"
 	"github.com/timkrebs/infragraph/internal/graph"
 	"github.com/timkrebs/infragraph/internal/store"
 )
@@ -26,7 +27,8 @@ type Handlers struct {
 	store    store.Store
 	graph    *atomic.Pointer[graph.Graph]
 	log      *slog.Logger
-	shutdown context.CancelFunc // set by the server to allow /v1/sys/shutdown
+	shutdown context.CancelFunc     // set by the server to allow /v1/sys/shutdown
+	emit     collector.EventFunc    // set by the server for collector push endpoint
 }
 
 // SetShutdown registers the cancel function that /v1/sys/shutdown will call.
