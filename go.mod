@@ -5,7 +5,7 @@ go 1.26.1
 require (
 	github.com/hashicorp/hcl/v2 v2.24.0
 	github.com/timkrebs/gocli v1.2.0
-	go.etcd.io/bbolt v1.3.9
+	go.etcd.io/bbolt v1.4.3
 	gopkg.in/yaml.v3 v3.0.1
 )
 
